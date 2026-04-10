@@ -1,0 +1,17 @@
+email:
+  imap_host: "imap.gmail.com"
+  imap_port: 993
+  poll_interval_seconds: 60
+  sender_filter: "do-not-reply@amazon.com"
+  subject_filter: "You sent a file"
+  mailbox: "INBOX"
+  processed_label: "kindle-processed"   # Must exist in Gmail before running
+
+fetch:
+  preferred_format: "text"              # "text" or "pdf"
+  request_timeout_seconds: 30
+  user_agent: "Mozilla/5.0"
+
+journal:
+  pending_folder: "~/Library/Mobile Documents/com~apple~CloudDocs/kindle-journal/pending"
+  dry_run: false                        # Set to true to print entries to stdout instead of writing files

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.chasrogers.kindle-journal</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/chas/Developer/kindle-to-journal/.venv/bin/python</string>
+        <string>/Users/chas/Developer/kindle-to-journal/main.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/chas/Developer/kindle-to-journal</string>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/chas/Library/Logs/kindle-journal/stdout.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/chas/Library/Logs/kindle-journal/stderr.log</string>
+</dict>
+</plist>

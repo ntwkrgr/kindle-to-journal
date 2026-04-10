@@ -1,0 +1,953 @@
+╭─── Claude Code v2.1.81 ──────────────────────────────────────────────────────╮
+│                                   │ Tips for getting started                 │
+│         Welcome back Chas!        │ Run /init to create a CLAUDE.md file wi… │
+│                                   │ ──────────────────────────────────────── │
+│              ▐▛███▜▌              │ Recent activity                          │
+│             ▝▜█████▛▘             │ No recent activity                       │
+│               ▘▘ ▝▝               │                                          │
+│                                   │                                          │
+│      Sonnet 4.6 · Claude Pro      │                                          │
+│   ~/Developer/kindle-to-journal   │                                          │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+❯ Review plan.md and ask clarifying questions for current unknowns.             
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ The plan is solid and well-scoped. Here are the open questions I see:
+
+  Amazon email structure (critical — affects implementation)
+  1. Have you received an actual "Convert to text and send" email yet? The link
+  anchor text ("Download text file") and the sender address
+  (digital-no-reply@amazon.com) are both marked as unconfirmed. If you have one,
+   can you forward it or inspect the raw HTML to verify?
+
+  Shortcuts CLI (critical — affects journal step)
+  2. Have you tested the shortcuts run "Add to Journal" --input-string "..."
+  command yet? The --input-string flag is the key assumption in the journal step
+   — it's worth validating before building around it.
+
+  Date for journal entries
+  3. When include_date_header: true, should the date be the email's received_at
+  (when Amazon sent it) or the current date (when the daemon processes it)? For
+  notes written days ago, these could differ.
+
+  Multiple notebooks per email
+  4. If you export two notebooks back-to-back, does Amazon send one email per
+  notebook or batch them? The current plan processes one download link per email
+   — this assumption should hold, but worth knowing.
+
+  Expired link handling
+  5. When a link is expired (>7 days), the plan says "log a clear error." Should
+   the email be marked processed/labeled anyway to prevent repeated error
+  logging on every poll? Or intentionally left unread so you can investigate?
+
+  Python environment
+  6. The plan doesn't specify the Python runtime. Will this use a venv, pyenv,
+  system Python? The launchd plist will need to point to a specific interpreter
+  path.
+
+✻ Worked for 31s
+
+❯ 1. do-not-reply@amazon.com                                                    
+2. Expand on what kind of shcortcut I need to create to test this.              
+3.Use the second line in the text file as the title for the journal entry. I'll 
+ usually have it as date, though maybe I'll change it sometimes. The first line 
+ is the page number in thr journal notebook on the kindle which I do not care   
+about.                                                                          
+4. Assume one per email.                                                        
+5. Log the error and mark the email as read.                                    
+6. Use best practice.                                                           
+
+⏺ Let me update the plan with your answers, and address the Shortcut question in
+   detail.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Update(plan.md)
+  ⎿  Added 1 line, removed 1 line
+      57    imap_host: "imap.gmail.com"
+      58    imap_port: 993
+      59    poll_interval_seconds: 60
+      60 -  sender_filter: "digital-no-reply@amazon.com"   # Confirm exac
+         -t sender after first real send                                 
+      60 +  sender_filter: "do-not-reply@amazon.com"                     
+      61    subject_filter: "You sent a file"               # Confirmed f
+          rom email subject pattern
+      62    mailbox: "INBOX"
+      63    processed_label: "kindle-processed"             # Gmail label
+           to apply after processing
+
+⏺ Update(plan.md)
+  ⎿  Added 12 lines, removed 9 lines
+      113  
+      114  **Note on link expiry**: Links expire in 7 days per Amazon. Th
+           e daemon polls every 60 seconds, so this is not a practical co
+           ncern as long as the Mac Mini is running. If the daemon was of
+           fline for >7 days, the message will be in the inbox but the li
+           nk will be dead — log a clear error in this case rather than s
+           ilently failing.
+      115  
+      116 -### 4. Journal Entry Creation (`journal/shortcuts.py`)        
+      117 -- Optionally prepend a date header to the text:               
+      118 -  ```                                                         
+      119 -  Date: 2025-03-23                                            
+      116 +### 4. Text Processing (`processor/fetch.py` or a new `process
+          +or/parse.py`)                                                 
+      117 +- After fetching the raw text content:                        
+      118 +  - Skip line 1 (Kindle page number — discarded)              
+      119 +  - Use line 2 as the **journal entry title**                 
+      120 +  - Lines 3 onward are the **body**                           
+      121 +- Strip leading/trailing whitespace from title and body       
+      122  
+      121 -  <transcribed text>                                          
+      122 -  ```                                                         
+      123 -- Invoke Shortcuts CLI:                                       
+      123 +### 5. Journal Entry Creation (`journal/shortcuts.py`)        
+      124 +- Accept `title: str` and `body: str` separately              
+      125 +- Encode both as a single string with a delimiter the Shortcut
+          + splits on:                                                   
+      126    ```python
+      127 +  payload = f"{title}||||{body}"                              
+      128    subprocess.run(
+      126 -      ["shortcuts", "run", shortcut_name, "--input-string", en
+          -try_text],                                                    
+      129 +      ["shortcuts", "run", shortcut_name, "--input-string", pa
+          +yload],                                                       
+      130        check=True,
+      131        timeout=30
+      132    )
+      133    ```
+      131 -- If `dry_run` is true, print to stdout instead               
+      134 +- If `dry_run` is true, print title and body to stdout instead
+      135  - Raise on non-zero exit code so the caller skips marking the 
+           email as processed
+      136  
+      137  ### 5. Main Loop (`main.py`)
+
+⏺ Update(plan.md)
+  ⎿  Added 1 line, removed 1 line
+      134  - If `dry_run` is true, print title and body to stdout instead
+      135  - Raise on non-zero exit code so the caller skips marking the 
+           email as processed
+      136  
+      137 -### 5. Main Loop (`main.py`)                                  
+      137 +### 6. Main Loop (`main.py`)                                  
+      138  - Load config and validate required env vars on startup; fail 
+           fast if missing
+      139  - Poll loop:
+      140    1. Fetch unseen matching messages
+
+⏺ Update(plan.md)
+  ⎿  Added 3 lines, removed 1 line
+      143       b. Create Journal entry
+      144       c. Apply `kindle-processed` label and mark read
+      145    3. Log each step with timestamp
+      146 -  4. On any exception in step 2a or 2b: log error, skip step 2
+          -c (message stays unread, retries next poll)                   
+      146 +  4. On fetch/parse exception (step 2a): log error, skip 2b an
+          +d 2c (message stays unread, retries next poll)                
+      147 +     On expired link specifically: log error, still apply labe
+          +l and mark read (won't recover on retry)                      
+      148 +     On journal creation exception (step 2b): log error, skip 
+          +step 2c (retries next poll)                                   
+      149    5. Sleep `poll_interval_seconds`
+      150  
+      151  ### 6. launchd Service
+
+⏺ Update(plan.md)
+  ⎿  Added 1 line, removed 1 line
+      148       On journal creation exception (step 2b): log error, skip 
+           step 2c (retries next poll)
+      149    5. Sleep `poll_interval_seconds`
+      150  
+      151 -### 6. launchd Service                                        
+      151 +### 7. launchd Service                                        
+      152  - `com.chasrogers.kindle-journal.plist` in `~/Library/LaunchAg
+           ents/`
+      153  - `RunAtLoad: true`, `KeepAlive: true`
+      154  - Redirect stdout/stderr to `~/Library/Logs/kindle-journal/`
+
+⏺ Update(plan.md)
+  ⎿  Added 1 line
+      152  - `com.chasrogers.kindle-journal.plist` in `~/Library/LaunchAg
+           ents/`
+      153  - `RunAtLoad: true`, `KeepAlive: true`
+      154  - Redirect stdout/stderr to `~/Library/Logs/kindle-journal/`
+      155 +- Point `ProgramArguments` to the venv Python: `~/Developer/ki
+          +ndle-journal/.venv/bin/python main.py`                        
+      156  - Load with `launchctl load ~/Library/LaunchAgents/com.chasrog
+           ers.kindle-journal.plist`
+      157  
+      158  ## Shortcut Setup (Manual — Do Before First Run)
+
+⏺ Update(plan.md)
+  ⎿  Added 23 lines, removed 8 lines
+      157  
+      158  ## Shortcut Setup (Manual — Do Before First Run)
+      159  
+      160 +The Shortcut receives a single string with title and body join
+          +ed by `||||`, splits them, and creates a Journal entry.       
+      161 +                                                              
+      162  1. Open **Shortcuts.app** on Mac
+      161 -2. New Shortcut, name it exactly `Add to Journal`             
+      162 -3. Add action: **Receive Text from Shortcut Input**           
+      163 -4. Add action: **Create Journal Entry**                       
+      164 -   - Body: Shortcut Input                                     
+      165 -   - Date: Current Date                                       
+      166 -5. Save                                                       
+      163 +2. New Shortcut → name it exactly **`Add to Journal`**        
+      164 +3. Add action: **Receive Text** from Shortcut Input → store as
+          + `Input`                                                      
+      165 +4. Add action: **Split Text**                                 
+      166 +   - Text: `Shortcut Input`                                   
+      167 +   - Separator: `Custom` → enter `||||`                       
+      168 +   - Result stored as `Parts`                                 
+      169 +5. Add action: **Get Item from List**                         
+      170 +   - List: `Parts`                                            
+      171 +   - Item: `First Item`                                       
+      172 +   - Store result as variable **`Title`**                     
+      173 +6. Add action: **Get Item from List**                         
+      174 +   - List: `Parts`                                            
+      175 +   - Item: `Last Item`                                        
+      176 +   - Store result as variable **`Body`**                      
+      177 +7. Add action: **Create Journal Entry**                       
+      178 +   - Title: `Title` (variable)                                
+      179 +   - Body: `Body` (variable)                                  
+      180 +   - Date: `Current Date`                                     
+      181 +8. Save                                                       
+      182  
+      183  Test manually before starting the daemon:
+      184  ```bash
+      170 -shortcuts run "Add to Journal" --input-string "Test entry from
+          - CLI"                                                         
+      185 +shortcuts run "Add to Journal" --input-string "My Entry Title|
+          +|||This is the body of the journal entry."                    
+      186  ```
+      172 -Confirm the entry appears in Journal.app before proceeding.   
+      187 +Confirm the entry appears in Journal.app with the correct titl
+          +e and body before proceeding.                                 
+      188  
+      189  ## Pre-Flight Checklist
+      190  
+
+⏺ Update(plan.md)
+  ⎿  Added 1 line, removed 2 lines
+      190  
+      191  - [ ] Gmail App Password created (Google Account → Security → 
+           App Passwords)
+      192  - [ ] `kindle-processed` label created in Gmail
+      193 -- [ ] Confirmed Amazon sender address from a real test send (u
+          -pdate `sender_filter` if different)                           
+      194 -- [ ] Shortcut created and CLI-tested                         
+      193 +- [ ] Shortcut created and CLI-tested (title + body appear cor
+          +rectly in Journal.app)                                        
+      194  - [ ] `.env` file in place with credentials
+      195  - [ ] `dry_run: true` for first real end-to-end test before en
+           abling live Journal writes
+      196  
+
+⏺ Now add the venv setup note to the Build Steps and remove the
+  include_date_header config since it's replaced by line-based title extraction:
+
+⏺ Update(plan.md)
+  ⎿  Added 2 lines
+      77  
+      78  ### 1. Project Scaffolding
+      79  - Initialize repo, create directory structure above
+      80 +- Create and activate venv: `python3 -m venv .venv && source .v
+         +env/bin/activate`                                              
+      81 +- Add `.venv/` to `.gitignore`                                 
+      82  - `requirements.txt` dependencies:
+      83    - `imapclient`
+      84    - `python-dotenv`
+
+⏺ Update(plan.md)
+  ⎿  Added 1 line, removed 2 lines
+      69  
+      70  journal:
+      71    shortcut_name: "Add to Journal"   # Must match Shortcut name 
+          exactly
+      72 -  include_date_header: true         # Prepend "Date: YYYY-MM-DD
+         -\n\n" to entry body                                            
+      73 -  dry_run: false                    # If true, print entry to s
+         -tdout instead of creating it                                   
+      72 +  dry_run: false                    # If true, print title and 
+         +body to stdout instead of creating entry                       
+      73  ```
+      74  
+      75  ## Build Steps
+
+⏺ Plan updated. Here's a summary of all changes made:
+
+  Confirmed/fixed:
+  - sender_filter → do-not-reply@amazon.com
+
+  Text processing (new step 4):
+  - Line 1 discarded (page number), line 2 → entry title, lines 3+ → body
+
+  Shortcut (expanded):
+  - Now a 7-step Shortcut that splits on |||| to separate title from body, then
+  calls Create Journal Entry with both fields. The test CLI command shows the
+  expected delimiter format.
+
+  Expired link handling:
+  - Log error + apply label + mark read (won't get better on retry, so no point
+  leaving it unread)
+
+  Python environment:
+  - venv in .venv/, gitignored, and the launchd plist points to .venv/bin/python
+   directly
+
+  One remaining question: The config.yaml journal.shortcut_name is still a
+  config value — do you want that flexibility, or should it be hardcoded?
+  Keeping it configurable seems fine since it costs nothing.
+
+✻ Brewed for 2m 2s
+
+❯ Explain why we split on |||| instead of new lines.                            
+
+⏺ The Shortcut's "Split Text" action is dumb — it splits on a literal fixed
+  string. If we split on newlines, the first item would be the title (correct),
+  but getting "everything after the first line" as a single string isn't
+  possible in Shortcuts. There's no "get items 2 through end and rejoin" action.
+
+  |||| gives us exactly two parts — title and body — so First Item and Last Item
+   each grab exactly what we want, even if the body contains many lines or blank
+   lines.
+
+❯ But I want to skip the first line (Page Number) and use the second as the     
+title. Here's exactly what one of the text files looks like:                    
+Page 24                                                                         
+# 3/22                                                                          
+-killed it today all day. I stayed regulated& connected w/ the girls. We        
+returned from our road trip today. Keep it up, dude.                            
+⏺ Python handles the line 1/2/body split — that's all done in code before the
+  Shortcut is ever called. By the time the Shortcut sees anything, Python has
+  already:
+
+  1. Discarded Page 24
+  2. Stripped #  from # 3/22 → title = 3/22
+  3. Joined remaining lines → body = -killed it today all day...
+  4. Built the payload: 3/22||||-killed it today all day...
+
+  The |||| exists purely because the body itself contains newlines. If we passed
+   3/22\n-killed it today... and split on newlines in the Shortcut, Last Item
+  would only return the last line of the body, not all of it.
+
+  Also worth updating the plan — Python should strip the #  prefix from the
+  title line. I'll add that:
+
+⏺ Update(plan.md)
+  ⎿  Added 3 lines, removed 3 lines
+      116  
+      117  ### 4. Text Processing (`processor/fetch.py` or a new `process
+           or/parse.py`)
+      118  - After fetching the raw text content:
+      119 -  - Skip line 1 (Kindle page number — discarded)              
+      120 -  - Use line 2 as the **journal entry title**                 
+      121 -  - Lines 3 onward are the **body**                           
+      119 +  - Skip line 1 (Kindle page number — discarded, e.g. `Page 24
+          +`)                                                            
+      120 +  - Strip leading `# ` from line 2 and use it as the **journal
+          + entry title** (e.g. `# 3/22` → `3/22`)                       
+      121 +  - Lines 3 onward joined as the **body**                     
+      122  - Strip leading/trailing whitespace from title and body
+      123  
+      124  ### 5. Journal Entry Creation (`journal/shortcuts.py`)
+
+❯ There's no Journal in the shortcuts app.                                      
+
+⏺ What macOS version are you on? The Journal Shortcuts action requires macOS
+  Sonoma 14.2+.
+
+  If you're on an older version, or if Journal simply isn't showing up, we have
+  a few alternatives to explore:
+
+  1. AppleScript — Journal.app may have a scriptable dictionary. We can test
+  with:
+  osascript -e 'tell application "Journal" to get name'
+  2. URL scheme — Some apps accept appname:// URLs via open that can create
+  entries, though Journal's URL scheme isn't well documented.
+  3. Different journal app — Bear, Day One, and Obsidian all have solid CLI or
+  URL scheme support and work well for this kind of automation.
+
+  What does your setup look like — macOS version, and are you open to using a
+  different app if Journal proves difficult to automate?
+
+❯ URL scheme appears to be moments:// for the Journal app.                      
+
+⏺ Good find. I'm not confident in the exact parameter format for moments:// — we
+   should probe it before locking it into the plan. Try these in Terminal to
+  discover what's supported:
+
+  # Just open the app
+  open "moments://"
+
+  # Common pattern for new entry with text
+  open "moments://new?text=Hello%20world"
+
+  # Some apps use 'body' or 'content' instead of 'text'
+  open "moments://new?body=Hello%20world"
+
+  # Some support title separately
+  open "moments://new?title=My%20Title&body=My%20body"
+
+  Once we know which parameters work, the Python side becomes straightforward —
+  no Shortcuts needed at all:
+
+  import subprocess
+  import urllib.parse
+
+  url = f"moments://new?title={urllib.parse.quote(title)}&body={urllib.parse.quo
+  te(body)}"
+  subprocess.run(["open", url], check=True)
+
+  This also simplifies the architecture significantly — the |||| delimiter and
+  the entire Shortcut setup go away. What does the URL scheme respond to?
+
+❯ How do I test the URL Scheme?                                                 
+
+⏺ Paste this into Terminal:
+
+  open "moments://"
+
+  If Journal opens, the scheme is right. Then try:
+
+  open "moments://new?title=Test%20Title&body=Test%20body"
+
+  Check if a new entry appears in Journal.app with that title and body text. If
+  it works, try with a multi-line body:
+
+  open "moments://new?title=Test%20Title&body=Line%20one%0ALine%20two"
+
+  (%0A is a URL-encoded newline.)
+
+❯ It appears the Shortcut/URL Schema for Journal is only available on iOS and   
+not MacOS. How can we adjust the plan to account for that?                      
+
+⏺ The architecture needs to change. A few real options:
+
+  Option A: Day One CLI
+  Day One has a proper macOS CLI (dayone2). Entries sync to iPhone via iCloud.
+  Straightforward drop-in replacement — just swap the journal step.
+  dayone2 new "entry text" --title "3/22"
+  Downside: Day One is a paid app ($35/yr).
+
+  Option B: iCloud file drop → iOS Shortcut
+  Mac writes the entry as a .txt file to an iCloud Drive folder. An iOS Shortcut
+   automation watches that folder and creates a Journal entry when new files
+  appear. Preserves Apple Journal on iPhone, but the Mac is no longer the
+  execution host for the Journal step — just a file producer. Slightly fragile
+  (iOS automation can be flaky).
+
+  Option C: Apple Notes via AppleScript
+  Apple Notes is fully scriptable on macOS and syncs to iPhone natively. Not
+  quite the same as Journal, but zero cost and reliable automation:
+  osascript -e 'tell application "Notes" to make new note with properties 
+  {name:"3/22", body:"..."}'
+
+  Option D: Markdown files in Obsidian
+  Write .md files to an Obsidian vault in iCloud. Not Apple Journal, but highly
+  automatable and sync is solid.
+
+  My recommendation depends on one question: are you attached to Apple Journal 
+  specifically, or is the goal just a private, synced journal on your iPhone? If
+   it's the latter, Day One or Notes are much cleaner paths.
+
+❯ Yes, must be Apple Journal.                                                   
+
+⏺ Then Option B is the only path: the Mac writes entry files to an iCloud Drive
+  folder, and an iOS Shortcut automation picks them up and creates Journal
+  entries.
+
+  The architecture becomes:
+
+  Kindle Scribe
+      → Gmail inbox
+      → Mac Mini daemon
+      → HTTP fetch → .txt file
+      → Write entry file to iCloud Drive folder
+      → [iCloud sync]
+      → iOS Shortcut automation (triggered by new file)
+      → Journal.app
+
+  Key trade-offs to be aware of before updating the plan:
+
+  - iOS automation reliability — the "File Added to Folder" Shortcut trigger on
+  iOS is not instantaneous. It may take minutes or run on a schedule. Entries
+  will appear in Journal eventually, not immediately.
+  - File cleanup — the Shortcut needs to delete the file after creating the
+  entry, otherwise it'll retrigger or accumulate.
+  - Mac side simplifies — instead of invoking Shortcuts CLI, the daemon just
+  writes a structured file (JSON works well for title + body) to
+  ~/Library/Mobile Documents/com~apple~CloudDocs/kindle-journal/pending/.
+
+  Want me to update the plan with this architecture? The Mac daemon code stays
+  largely the same — the journal/ module just becomes a file writer instead of a
+   Shortcuts invoker. The main new piece is the iOS Shortcut setup instructions.
+
+❯ Yes, update the plan.                                                         
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Write(plan.md)
+  ⎿  Added 58 lines, removed 50 lines
+      2  
+      3  ## Overview
+      4  
+      5 -A Python daemon running on Mac Mini that watches a Gmail inbox f
+        -or Kindle Scribe notebook exports, downloads the converted text 
+        -file from Amazon's download link, and creates Apple Journal entr
+        -ies via macOS Shortcuts CLI.                                    
+      5 +A Python daemon running on Mac Mini that watches a Gmail inbox f
+        +or Kindle Scribe notebook exports, downloads the converted text 
+        +file from Amazon's download link, and writes a JSON entry file t
+        +o iCloud Drive. An iOS Shortcut automation picks up the file and
+        + creates an Apple Journal entry.                                
+      6  
+      7  No OCR or Vision API required — the Kindle "Convert to text and 
+         send" option produces a plain text file directly.
+      8  
+     ...
+      13      → Gmail inbox (email with expiring download links)
+      14      → Mac Mini daemon (launchd)
+      15      → HTTP fetch (Amazon download link → .txt file)
+      16 -    → Entry creation (macOS Shortcuts CLI → Journal app)       
+      17 -    → iCloud sync → iPhone/iPad Journal                        
+      16 +    → JSON entry file written to iCloud Drive folder           
+      17 +    → [iCloud sync]                                            
+      18 +    → iOS Shortcut automation (triggered by new file in folder)
+      19 +    → Apple Journal.app → iCloud sync → iPhone/iPad            
+      20  ```
+      21  
+      22  ## Repository Layout
+     ...
+      30  │   └── imap_watcher.py     # Gmail IMAP polling
+      31  ├── processor/
+      32  │   ├── __init__.py
+      31 -│   └── fetch.py            # Parse email body for download lin
+         -k, fetch text file                                             
+      33 +│   └── fetch.py            # Parse email body for download lin
+         +k, fetch and parse text file                                   
+      34  ├── journal/
+      35  │   ├── __init__.py
+      34 -│   └── shortcuts.py        # macOS Shortcuts CLI invocation   
+      36 +│   └── icloud_writer.py    # Write entry JSON file to iCloud D
+         +rive pending folder                                            
+      37  ├── config.yaml.example
+      38  ├── com.chasrogers.kindle-journal.plist   # launchd service def
+          inition
+      39  ├── requirements.txt
+     ...
+      70    user_agent: "Mozilla/5.0"       # Amazon may block headless r
+          equests without a UA
+      71  
+      72  journal:
+      71 -  shortcut_name: "Add to Journal"   # Must match Shortcut name 
+         -exactly                                                        
+      72 -  dry_run: false                    # If true, print title and 
+         -body to stdout instead of creating entry                       
+      73 +  pending_folder: "~/Library/Mobile Documents/com~apple~CloudDo
+         +cs/kindle-journal/pending"                                     
+      74 +  dry_run: false                  # If true, print title and bo
+         +dy to stdout instead of writing file                           
+      75  ```
+      76  
+      77  ## Build Steps
+     ...
+      114  - Return the decoded text string
+      115  - Raise on HTTP error or empty response so the caller skips ma
+           rking the message as processed
+      116  
+      115 -**Note on link expiry**: Links expire in 7 days per Amazon. Th
+          -e daemon polls every 60 seconds, so this is not a practical co
+          -ncern as long as the Mac Mini is running. If the daemon was of
+          -fline for >7 days, the message will be in the inbox but the li
+          -nk will be dead — log a clear error in this case rather than s
+          -ilently failing.                                              
+      117 +**Note on link expiry**: Links expire in 7 days per Amazon. Th
+          +e daemon polls every 60 seconds, so this is not a practical co
+          +ncern as long as the Mac Mini is running. If the daemon was of
+          +fline for >7 days, the message will be in the inbox but the li
+          +nk will be dead — log a clear error and mark read (won't recov
+          +er on retry).                                                 
+      118  
+      117 -### 4. Text Processing (`processor/fetch.py` or a new `process
+          -or/parse.py`)                                                 
+      119 +### 4. Text Processing (`processor/fetch.py`)                 
+      120  - After fetching the raw text content:
+      121    - Skip line 1 (Kindle page number — discarded, e.g. `Page 24
+           `)
+      122    - Strip leading `# ` from line 2 and use it as the **journal
+            entry title** (e.g. `# 3/22` → `3/22`)
+      123    - Lines 3 onward joined as the **body**
+      124  - Strip leading/trailing whitespace from title and body
+      125  
+      124 -### 5. Journal Entry Creation (`journal/shortcuts.py`)        
+      125 -- Accept `title: str` and `body: str` separately              
+      126 -- Encode both as a single string with a delimiter the Shortcut
+          - splits on:                                                   
+      127 -  ```python                                                   
+      128 -  payload = f"{title}||||{body}"                              
+      129 -  subprocess.run(                                             
+      130 -      ["shortcuts", "run", shortcut_name, "--input-string", pa
+          -yload],                                                       
+      131 -      check=True,                                             
+      132 -      timeout=30                                              
+      133 -  )                                                           
+      126 +### 5. iCloud Entry Writer (`journal/icloud_writer.py`)       
+      127 +- Accept `title: str` and `body: str`                         
+      128 +- Expand `pending_folder` path and create it if it doesn't exi
+          +st                                                            
+      129 +- Write a JSON file to the pending folder:                    
+      130 +  ```json                                                     
+      131 +  {                                                           
+      132 +    "title": "3/22",                                          
+      133 +    "body": "-killed it today all day..."                     
+      134 +  }                                                           
+      135    ```
+      136 +- Filename: `{timestamp}-entry.json` (e.g. `20260323-143012-en
+          +try.json`) to avoid collisions                                
+      137  - If `dry_run` is true, print title and body to stdout instead
+      136 -- Raise on non-zero exit code so the caller skips marking the 
+          -email as processed                                            
+      138 +- Raise on write failure so the caller skips marking the email
+          + as processed                                                 
+      139  
+      140  ### 6. Main Loop (`main.py`)
+      141  - Load config and validate required env vars on startup; fail 
+           fast if missing
+     ...
+      143    1. Fetch unseen matching messages
+      144    2. For each message:
+      145       a. Parse and fetch the text file download
+      144 -     b. Create Journal entry                                  
+      146 +     b. Write entry file to iCloud Drive                      
+      147       c. Apply `kindle-processed` label and mark read
+      148    3. Log each step with timestamp
+      149    4. On fetch/parse exception (step 2a): log error, skip 2b an
+           d 2c (message stays unread, retries next poll)
+      150       On expired link specifically: log error, still apply labe
+           l and mark read (won't recover on retry)
+      149 -     On journal creation exception (step 2b): log error, skip 
+          -step 2c (retries next poll)                                   
+      151 +     On file write exception (step 2b): log error, skip step 2
+          +c (retries next poll)                                         
+      152    5. Sleep `poll_interval_seconds`
+      153  
+      154  ### 7. launchd Service
+     ...
+      158  - Point `ProgramArguments` to the venv Python: `~/Developer/ki
+           ndle-journal/.venv/bin/python main.py`
+      159  - Load with `launchctl load ~/Library/LaunchAgents/com.chasrog
+           ers.kindle-journal.plist`
+      160  
+      159 -## Shortcut Setup (Manual — Do Before First Run)              
+      161 +## iOS Shortcut Setup (Manual — Do Before First Run)          
+      162  
+      161 -The Shortcut receives a single string with title and body join
+          -ed by `||||`, splits them, and creates a Journal entry.       
+      163 +The iOS Shortcut watches the iCloud Drive pending folder, read
+          +s each JSON file, creates a Journal entry, then deletes the fi
+          +le.                                                           
+      164  
+      163 -1. Open **Shortcuts.app** on Mac                              
+      164 -2. New Shortcut → name it exactly **`Add to Journal`**        
+      165 -3. Add action: **Receive Text** from Shortcut Input → store as
+          - `Input`                                                      
+      166 -4. Add action: **Split Text**                                 
+      167 -   - Text: `Shortcut Input`                                   
+      168 -   - Separator: `Custom` → enter `||||`                       
+      169 -   - Result stored as `Parts`                                 
+      170 -5. Add action: **Get Item from List**                         
+      171 -   - List: `Parts`                                            
+      172 -   - Item: `First Item`                                       
+      173 -   - Store result as variable **`Title`**                     
+      174 -6. Add action: **Get Item from List**                         
+      175 -   - List: `Parts`                                            
+      176 -   - Item: `Last Item`                                        
+      177 -   - Store result as variable **`Body`**                      
+      178 -7. Add action: **Create Journal Entry**                       
+      179 -   - Title: `Title` (variable)                                
+      180 -   - Body: `Body` (variable)                                  
+      181 -   - Date: `Current Date`                                     
+      182 -8. Save                                                       
+      165 +### Create the Shortcut                                       
+      166  
+      184 -Test manually before starting the daemon:                     
+      167 +1. Open **Shortcuts.app** on iPhone/iPad                      
+      168 +2. Go to **Automation** tab → **New Automation**              
+      169 +3. Trigger: **Folder** → select `kindle-journal/pending` in iC
+          +loud Drive → **A File is Added**                              
+      170 +4. Disable "Ask Before Running" so it runs silently           
+      171 +5. Add action: **Get File** — File: the file that was added (A
+          +utomation input)                                              
+      172 +6. Add action: **Get Contents of JSON File** — Input: above fi
+          +le → store as `Entry`                                         
+      173 +7. Add action: **Get Value from Dictionary**                  
+      174 +   - Dictionary: `Entry`                                      
+      175 +   - Key: `title`                                             
+      176 +   - Store as variable **`Title`**                            
+      177 +8. Add action: **Get Value from Dictionary**                  
+      178 +   - Dictionary: `Entry`                                      
+      179 +   - Key: `body`                                              
+      180 +   - Store as variable **`Body`**                             
+      181 +9. Add action: **Create Journal Entry**                       
+      182 +   - Title: `Title`                                           
+      183 +   - Body: `Body`                                             
+      184 +   - Date: Current Date                                       
+      185 +10. Add action: **Delete File** — File: the file that was adde
+          +d (same Automation input)                                     
+      186 +11. Save                                                      
+      187 +                                                              
+      188 +### Test Manually                                             
+      189 +                                                              
+      190 +Drop a test JSON file into the iCloud pending folder from Mac:
+      191  ```bash
+      186 -shortcuts run "Add to Journal" --input-string "My Entry Title|
+          -|||This is the body of the journal entry."                    
+      192 +mkdir -p ~/Library/Mobile\ Documents/com~apple~CloudDocs/kindl
+          +e-journal/pending                                             
+      193 +echo '{"title":"Test Entry","body":"This is a test body."}' \ 
+      194 +  > ~/Library/Mobile\ Documents/com~apple~CloudDocs/kindle-jou
+          +rnal/pending/test-entry.json                                  
+      195  ```
+      188 -Confirm the entry appears in Journal.app with the correct titl
+          -e and body before proceeding.                                 
+      196 +Wait for the Shortcut to trigger on iPhone and confirm the ent
+          +ry appears in Journal.app. Note: there may be a delay of sever
+          +al minutes before iOS detects the new file.                   
+      197  
+      198  ## Pre-Flight Checklist
+      199  
+      200  - [ ] Gmail App Password created (Google Account → Security → 
+           App Passwords)
+      201  - [ ] `kindle-processed` label created in Gmail
+      194 -- [ ] Shortcut created and CLI-tested (title + body appear cor
+          -rectly in Journal.app)                                        
+      202 +- [ ] iCloud Drive folder created: `kindle-journal/pending`   
+      203 +- [ ] iOS Shortcut created and file-drop tested               
+      204  - [ ] `.env` file in place with credentials
+      196 -- [ ] `dry_run: true` for first real end-to-end test before en
+          -abling live Journal writes                                    
+      205 +- [ ] `dry_run: true` for first real end-to-end test before en
+          +abling live file writes                                       
+      206  
+      207  ## Out of Scope
+      208  - OCR, Vision API, or any image processing (text file makes th
+           is unnecessary)
+      209  - M365 / Microsoft Graph
+      210  - GUI or web interface
+      211  - Editing or deleting Journal entries
+      203 -- iOS Shortcuts (Mac Mini is the execution host; iCloud handle
+          -s sync to iPhone)                                             
+
+⏺ Done. Key changes:
+
+  - Architecture — Mac writes JSON files to iCloud Drive; iOS Shortcut
+  automation creates the Journal entries
+  - journal/shortcuts.py → journal/icloud_writer.py — writes
+  {timestamp}-entry.json with title and body
+  - config.yaml — shortcut_name replaced with pending_folder (the iCloud Drive
+  path)
+  - iOS Shortcut — full step-by-step setup using a Folder automation trigger
+  with JSON parsing
+  - Test instructions — echo a JSON file from Terminal to manually trigger the
+  iOS Shortcut before the daemon is running
+  - Out of scope — removed the note excluding iOS Shortcuts since it's now the
+  execution host for Journal writes
+
+  One thing to be aware of: the "File Added to Folder" automation trigger on iOS
+   is not perfectly instantaneous — entries will land in Journal within a few
+  minutes, not immediately.
+
+✻ Sautéed for 57s
+
+❯ How do I grant access to my gmail if I have 2fa enabled?                      
+
+⏺ You need to create a Gmail App Password — a one-time 16-character password
+  that lets the daemon authenticate via IMAP without your real password or 2FA
+  prompt.
+
+  1. Go to myaccount.google.com
+  2. Search for "App Passwords" in the search bar (it's buried otherwise)
+  3. Give it a name like kindle-journal
+  4. Click Create — Google shows you a 16-character password once
+  5. Copy it immediately and put it in your .env file:
+  IMAP_USERNAME=you@gmail.com
+  IMAP_PASSWORD=xxxx xxxx xxxx xxxx
+  5. (spaces in the password are fine — or remove them, both work)
+
+  Prerequisite: App Passwords only appear if your Google account has 2FA
+  enabled, which you already have. If you don't see the option, search for it —
+  Google has moved it around and sometimes hides it depending on account type.
+
+❯ Done. .env exists. Add it to the .gitignore. Ready to build?                  
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+⏺ Write(.gitignore)
+  ⎿  Wrote 4 lines to .gitignore
+      1 .env
+      2 .venv/
+      3 __pycache__/
+      4 *.pyc
+⏺ Done. Ready to build — I'll use the feature-dev skill to approach this
+  properly.
+
+⏺ Skill(feature-dev:feature-dev)
+  ⎿  Successfully loaded skill
+
+⏺ Bash(mkdir -p /Users/chas/Developer/kindle-to-journal/watcher
+      /Users/chas/Developer/kindle-to-journal/processor
+      /Users/chas/Developer/kindle-to-journal/journal && to…)
+  ⎿  Done
+
+⏺ Write(requirements.txt)
+  ⎿  Wrote 5 lines to requirements.txt
+      1 imapclient
+      2 python-dotenv
+      3 pyyaml
+      4 requests
+      5 beautifulsoup4
+
+⏺ Write(config.py)
+  ⎿  Wrote 81 lines to config.py
+       1 import os
+       2 from dataclasses import dataclass
+       3 from pathlib import Path
+       4 
+       5 import yaml
+       6 from dotenv import load_dotenv
+       7 
+       8 
+       9 @dataclass
+      10 class EmailConfig:
+     … +71 lines (ctrl+o to expand)
+
+⏺ Write(watcher/imap_watcher.py)
+  ⎿  Wrote 123 lines to watcher/imap_watcher.py
+       1 import logging
+       2 from dataclasses import dataclass
+       3 from datetime import datetime
+       4 from email import message_from_bytes
+       5 from email.utils import parsedate_to_datetime
+       6 from typing import Generator
+       7 
+       8 from imapclient import IMAPClient
+       9 
+      10 from config import EmailConfig
+     … +113 lines (ctrl+o to expand)
+⏺ Write(processor/fetch.py)
+  ⎿  Wrote 92 lines to processor/fetch.py
+       1 import logging
+       2 from dataclasses import dataclass
+       3 
+       4 import requests
+       5 from bs4 import BeautifulSoup
+       6 
+       7 from config import FetchConfig
+       8 from watcher.imap_watcher import EmailMessage
+       9 
+      10 logger = logging.getLogger(__name__)
+     … +82 lines (ctrl+o to expand)
+
+⏺ Write(journal/icloud_writer.py)
+  ⎿  Wrote 26 lines to journal/icloud_writer.py
+      1 import json
+      2 import logging
+      3 from datetime import datetime
+      4 from pathlib import Path
+      5 
+      6 from config import JournalConfig
+      7 
+      8 logger = logging.getLogger(__name__)
+      9 
+     … +16 lines (ctrl+o to expand)
+
+⏺ Write(main.py)
+  ⎿  Wrote 66 lines to main.py
+       1 import logging
+       2 import time
+       3 
+       4 from config import load_config
+       5 from journal.icloud_writer import write_entry
+       6 from processor.fetch import ExpiredLinkError, fetch_text, parse_
+         entry
+       7 from watcher.imap_watcher import IMAPWatcher
+       8 
+       9 logging.basicConfig(
+      10     level=logging.INFO,
+     … +56 lines (ctrl+o to expand)
+
+⏺ Write(config.yaml.example)
+  ⎿  Wrote 17 lines to config.yaml.example
+       1 email:
+       2   imap_host: "imap.gmail.com"
+       3   imap_port: 993
+       4   poll_interval_seconds: 60
+       5   sender_filter: "do-not-reply@amazon.com"
+       6   subject_filter: "You sent a file"
+       7   mailbox: "INBOX"
+       8   processed_label: "kindle-processed"   # Must exist in Gmail be
+         fore running
+       9 
+      10 fetch:
+     … +7 lines (ctrl+o to expand)
+
+⏺ Write(com.chasrogers.kindle-journal.plist)
+  ⎿  Wrote 29 lines to com.chasrogers.kindle-journal.plist
+       1 <?xml version="1.0" encoding="UTF-8"?>
+       2 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www
+         .apple.com/DTDs/PropertyList-1.0.dtd">
+       3 <plist version="1.0">
+       4 <dict>
+       5     <key>Label</key>
+       6     <string>com.chasrogers.kindle-journal</string>
+       7 
+       8     <key>ProgramArguments</key>
+       9     <array>
+      10         <string>/Users/chas/Developer/kindle-to-journal/.venv/bi
+         n/python</string>
+     … +19 lines (ctrl+o to expand)
+
+⏺ All done. Here's what was built:
+
+  kindle-to-journal/
+  ├── main.py                   # Poll loop with per-step error handling
+  ├── config.py                 # Typed config loader, fails fast on missing env
+   vars
+  ├── watcher/
+  │   └── imap_watcher.py       # IMAP polling, Gmail label application
+  ├── processor/
+  │   └── fetch.py              # Link extraction, HTTP fetch, text parsing
+  ├── journal/
+  │   └── icloud_writer.py      # Writes timestamped JSON to iCloud pending
+  folder
+  ├── config.yaml.example
+  ├── com.chasrogers.kindle-journal.plist
+  ├── requirements.txt
+  └── .gitignore
+
+  Next steps before first run:
+
+  # 1. Install dependencies
+  cd /Users/chas/Developer/kindle-to-journal
+  python3 -m venv .venv && source .venv/bin/activate
+  pip install -r requirements.txt
+
+  # 2. Copy and edit config
+  cp config.yaml.example config.yaml
+
+  # 3. Create the log directory
+  mkdir -p ~/Library/Logs/kindle-journal
+
+  # 4. Test with dry_run: true first
+  # Set dry_run: true in config.yaml, then:
+  python main.py
+
+  Also create the kindle-processed label in Gmail and set up the iOS Shortcut
+  per the plan before enabling live writes.
+
+✻ Worked for 3m 1s
