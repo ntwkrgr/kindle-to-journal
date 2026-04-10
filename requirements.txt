@@ -1,5 +1,0 @@
-imapclient
-python-dotenv
-pyyaml
-requests
-beautifulsoup4
